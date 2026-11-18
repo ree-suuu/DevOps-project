@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Full-Stack MERN Hosting Infrastructure on Ubuntu 24.04 (EC2 + SSM KeyPair + Security Group + Nginx + PM2)
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro, t2.small, t2.medium, t3.micro, t3.small, t3.medium]
+    Description: EC2 instance type (t2.micro is free-tier eligible)
+
+  UbuntuAMI:
+    Type: String
+    Default: ami-0e86e20dae9224db8
+    Description: Ubuntu 24.04 LTS AMI in us-east-1
+
+  SSHLocation:
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+    Description: Allow SSH from anywhere for GitHub Actions runner
+
+Resources:
+  # 1. SSH KeyPair automatically saved to SSM Parameter Store
+  ServerKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub "${AWS::StackName}-key"
+
+  # 2. Security Group opening Port 80 (HTTP) and Port 22 (SSH)
+  ServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and SSH
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+
+  # 3. Ubuntu Virtual Machine with Startup Bootstrap (UserData)
+  ServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAMI
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref ServerKeyPair
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp2
+            VolumeSize: 12
+            DeleteOnTermination: true
+      SecurityGroupIds:
+        - !GetAtt ServerSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-server"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          exec > /var/log/userdata.log 2>&1
+
+          # 1. Setup 2GB swap space to prevent Out-Of-Memory on 1GB t2.micro
+          fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+          # 2. Install Node.js 22, Git, Nginx, PM2
+          apt-get update -y
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs nginx git
+          npm install -g pm2
+
+          # 3. Create web directory
+          mkdir -p /var/www/app
+          chown -R ubuntu:ubuntu /var/www/app
+
+          # 4. Enable PM2 startup systemd service for ubuntu user
+          sudo -u ubuntu pm2 startup systemd -u ubuntu --hp /home/ubuntu | tail -1 | bash
+
+Outputs:
+  PublicIP:
+    Description: Public IP of the server
+    Value: !GetAtt ServerInstance.PublicIp
+
+  PublicURL:
+    Description: Live Web Application URL
+    Value: !Sub "http://${ServerInstance.PublicIp}"
+
+  SSMKeyPath:
+    Description: Parameter Store path for private SSH key
+    Value: !Sub "/ec2/keypair/${ServerKeyPair.KeyPairId}"
+
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref ServerInstance
