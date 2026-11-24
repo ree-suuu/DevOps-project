@@ -7,9 +7,11 @@ import { requireAuth } from '../middleware/authMiddleware.js'
 const router = express.Router()
 
 function findProduct(productId) {
-  const query = mongoose.isValidObjectId(productId)
-    ? { $or: [{ _id: productId }, { productId }] }
-    : { productId }
+  if (!productId) return null
+  const cleanId = String(productId).trim()
+  const query = mongoose.isValidObjectId(cleanId)
+    ? { $or: [{ _id: cleanId }, { productId: cleanId }, { slug: cleanId }, { name: cleanId }] }
+    : { $or: [{ productId: cleanId }, { slug: cleanId }, { name: cleanId }] }
   return Product.findOne({ ...query, isActive: true })
 }
 
