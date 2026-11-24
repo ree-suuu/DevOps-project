@@ -68,7 +68,7 @@ export default function Login() {
       })
 
       if (data?.user) {
-        login(data.user)
+        login(data.user, data.token)
         setSuccessUser(data.user)
         setAuthSuccess(true)
       } else {

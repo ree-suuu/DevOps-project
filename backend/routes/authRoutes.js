@@ -14,17 +14,20 @@ function createToken(userId) {
 
 function sendAuthResponse(res, user, message, statusCode = 200) {
   const token = createToken(user._id.toString())
+  // In production without SSL (plain HTTP IP), secure must be false so the browser accepts the cookie
+  const isSecure = process.env.COOKIE_SECURE === 'true'
   res
     .cookie(JWT_COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       maxAge: 7 * 24 * 60 * 60 * 1000
     })
     .status(statusCode)
     .json({
       success: true,
       message,
+      token,
       user: {
         id: user._id,
         name: user.name,
@@ -80,13 +83,19 @@ router.post('/login', async (req, res) => {
 })
 
 router.post('/logout', (req, res) => {
-  res.clearCookie(JWT_COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' })
+  res.clearCookie(JWT_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.COOKIE_SECURE === 'true'
+  })
   res.json({ success: true, message: 'Signed out successfully' })
 })
 
 router.get('/me', async (req, res) => {
   try {
-    const token = req.cookies[JWT_COOKIE_NAME]
+    const authHeader = req.headers.authorization
+    const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+    const token = req.cookies?.[JWT_COOKIE_NAME] || bearerToken
     if (!token) return res.status(401).json({ success: false, message: 'Not authenticated' })
 
     const payload = jwt.verify(token, process.env.JWT_SECRET)

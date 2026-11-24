@@ -23,21 +23,22 @@ export function AuthProvider({ children }) {
           localStorage.setItem('klay_user', JSON.stringify(data.user))
         }
       })
-      .catch((error) => {
-        if (error.message === 'Not authenticated') {
-          setUser(null)
-          localStorage.removeItem('klay_user')
-        }
+      .catch(() => {
+        setUser(null)
+        localStorage.removeItem('klay_user')
       })
       .finally(() => {
         setLoading(false)
       })
   }, [])
 
-  const login = (userData) => {
+  const login = (userData, token) => {
     setUser(userData)
     try {
       localStorage.setItem('klay_user', JSON.stringify(userData))
+      if (token) {
+        localStorage.setItem('klay_token', token)
+      }
     } catch (e) {
       console.error('Failed to store auth session:', e)
     }
@@ -52,6 +53,7 @@ export function AuthProvider({ children }) {
       setUser(null)
       try {
         localStorage.removeItem('klay_user')
+        localStorage.removeItem('klay_token')
       } catch (e) {
         console.error('Failed to clear auth session:', e)
       }

@@ -3,7 +3,9 @@ import User from '../models/User.js'
 
 export async function requireAuth(req, res, next) {
   try {
-    const token = req.cookies.klay_token
+    const authHeader = req.headers.authorization
+    const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+    const token = req.cookies?.klay_token || bearerToken
     if (!token) {
       return res.status(401).json({ success: false, message: 'Authentication required' })
     }
